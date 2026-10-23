@@ -39,7 +39,9 @@ COPY php/www.conf /usr/local/etc/php-fpm.d/www.conf
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/site.conf /etc/nginx/conf.d/site.conf
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+# docker.conf ships an fpm access log that duplicates nginx; drop it.
 RUN rm -f /usr/local/etc/php-fpm.d/zz-docker.conf /usr/local/etc/php-fpm.d/www.conf.default \
+    && sed -i '/^access\.log/d' /usr/local/etc/php-fpm.d/docker.conf \
     && chmod 755 /usr/local/bin/entrypoint.sh \
     && mkdir -p /var/lib/php/sessions /var/www/app \
     && chown www-data:www-data /var/lib/php/sessions \
