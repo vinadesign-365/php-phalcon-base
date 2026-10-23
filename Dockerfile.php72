@@ -1,0 +1,53 @@
+# Runtime for mbn-cms sites still on the Phalcon 3 API (inkythuatso.com):
+# PHP 7.2 + Phalcon 3.4.5 (matches the web102 php7.2 pool) plus nginx, same layout as the 7.4 image.
+#   FROM ghcr.io/vinadesign-365/php-phalcon-base:7.2-3.4.5
+#   COPY . /var/www/app
+FROM php:7.2-fpm-buster
+
+ENV TZ=Asia/Ho_Chi_Minh \
+    FPM_MAX_CHILDREN=10
+
+# Buster is EOL: packages only on archive.debian.org; apt-install falls back to the archive.
+COPY apt-install.sh /usr/local/bin/apt-install
+RUN chmod 755 /usr/local/bin/apt-install
+
+RUN savedAptMark="$(apt-mark showmanual)" \
+    && apt-install \
+        libfreetype6-dev libjpeg62-turbo-dev libpng-dev libzip-dev libicu-dev libmagickwand-dev \
+    && docker-php-ext-configure gd --with-freetype-dir=/usr/include/ --with-jpeg-dir=/usr/include/ \
+    && docker-php-ext-install -j"$(nproc)" gd zip intl exif pdo_mysql mysqli opcache \
+    && pecl install apcu-5.1.19 imagick-3.4.4 \
+    && docker-php-ext-enable apcu imagick \
+    && curl -fsSL -o /tmp/cphalcon.tar.gz https://github.com/phalcon/cphalcon/archive/refs/tags/v3.4.5.tar.gz \
+    && tar -xzf /tmp/cphalcon.tar.gz -C /tmp \
+    && cd /tmp/cphalcon-3.4.5/build && ./install \
+    && docker-php-ext-enable phalcon \
+    && cd / && rm -rf /tmp/cphalcon* /tmp/pear \
+    # keep only the runtime libs the compiled extensions link against
+    && apt-mark auto '.*' > /dev/null && apt-mark manual $savedAptMark > /dev/null \
+    && find /usr/local -type f -name '*.so*' -exec ldd '{}' ';' \
+        | awk '/=>/ { print $3 }' | sort -u | xargs -r dpkg-query --search 2>/dev/null \
+        | cut -d: -f1 | sort -u | xargs -r apt-mark manual \
+    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
+    && rm -rf /var/lib/apt/lists/* \
+    && php -m | grep -qi '^phalcon$' && php -r 'echo "phalcon ", Phalcon\Version::get(), PHP_EOL;'
+
+RUN apt-install nginx \
+    && rm -rf /var/lib/apt/lists/* /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d/* /var/www/html
+
+COPY php/php.ini /usr/local/etc/php/conf.d/zz-prod.ini
+COPY php/www.conf /usr/local/etc/php-fpm.d/www.conf
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
+COPY nginx/site.conf /etc/nginx/conf.d/site.conf
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN rm -f /usr/local/etc/php-fpm.d/zz-docker.conf /usr/local/etc/php-fpm.d/www.conf.default \
+    && chmod 755 /usr/local/bin/entrypoint.sh \
+    && mkdir -p /var/lib/php/sessions /var/www/app \
+    && chown www-data:www-data /var/lib/php/sessions \
+    && php-fpm -t && nginx -t
+
+WORKDIR /var/www/app
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD php -r 'exit(@file_get_contents("http://127.0.0.1/healthz") === "ok" ? 0 : 1);'
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

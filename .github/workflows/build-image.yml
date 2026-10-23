@@ -11,8 +11,6 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/php-phalcon-base
-  # Bump when PHP / Phalcon versions in the Dockerfile change. Site repos pin this tag.
-  VERSION_TAG: 7.4-4.1.0
 
 jobs:
   build:
@@ -20,6 +18,17 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Bump the tag when PHP / Phalcon versions in the Dockerfile change. Site repos pin these tags.
+          - dockerfile: Dockerfile
+            tag: 7.4-4.1.0
+            latest: true
+          - dockerfile: Dockerfile.php72
+            tag: 7.2-3.4.5
+            latest: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,17 +49,18 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=raw,value=${{ env.VERSION_TAG }}
-            type=sha,format=short,prefix=${{ env.VERSION_TAG }}-
-            type=raw,value=latest
+            type=raw,value=${{ matrix.tag }}
+            type=sha,format=short,prefix=${{ matrix.tag }}-
+            type=raw,value=latest,enable=${{ matrix.latest }}
 
       - name: Build & push
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.tag }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.tag }}

@@ -8,20 +8,22 @@ CONF="$APP/app/configs/__config_install.php"
 
 # php-fpm runs with clear_env=yes, so the app reads its settings from __config_install.php,
 # written here from the container env. A mounted config file is used when DB_NAME is not set.
-# THEME_NAME may be empty: some sites read the theme from the DB options table.
+# THEME_NAME set but empty is written as "" (some sites read the theme from the DB options table);
+# THEME_NAME unset leaves the key out, so config.php applies its own default.
 if [ -n "${DB_NAME:-}" ]; then
     php -r '
         $map = [
             "db_name" => "DB_NAME", "db_user" => "DB_USER", "db_pass" => "DB_PASS",
             "db_host" => "DB_HOST", "db_port" => "DB_PORT",
-            "base_url" => "BASE_URL", "protocol" => "PROTOCOL", "theme_name" => "THEME_NAME",
+            "base_url" => "BASE_URL", "protocol" => "PROTOCOL",
             "redis_host" => "REDIS_HOST", "redis_port" => "REDIS_PORT",
         ];
-        $c = ["protocol" => "https", "theme_name" => ""];
+        $c = ["protocol" => "https"];
         foreach ($map as $key => $env) {
             $v = getenv($env);
             if ($v !== false && $v !== "") $c[$key] = $v;
         }
+        if (getenv("THEME_NAME") !== false) $c["theme_name"] = getenv("THEME_NAME");
         file_put_contents($argv[1], "<?php\n\$configInstall = " . var_export($c, true) . ";\n");
     ' "$CONF"
     chown root:www-data "$CONF"
@@ -32,11 +34,12 @@ elif [ ! -f "$CONF" ]; then
 fi
 
 # Only these paths are writable by php. Volumes come in root-owned on first mount.
-mkdir -p "$APP/web/uploads" "$APP/.session/tmp" "$APP/logs"
+# /var/lib/php/sessions is session.save_path for sites without their own session dir.
+mkdir -p "$APP/web/uploads" "$APP/.session/tmp" "$APP/logs" /var/lib/php/sessions
 for theme in "$APP"/web/themes/*/; do
     mkdir -p "${theme}caches/volt"
 done
-for dir in "$APP/web/uploads" "$APP/.session" "$APP/logs" "$APP"/web/themes/*/caches; do
+for dir in "$APP/web/uploads" "$APP/.session" "$APP/logs" /var/lib/php/sessions "$APP"/web/themes/*/caches; do
     find "$dir" ! -user www-data -exec chown www-data:www-data {} +
 done
 
