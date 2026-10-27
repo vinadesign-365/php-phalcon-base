@@ -17,6 +17,7 @@ if [ -n "${DB_NAME:-}" ]; then
             "db_host" => "DB_HOST", "db_port" => "DB_PORT",
             "base_url" => "BASE_URL", "protocol" => "PROTOCOL",
             "redis_host" => "REDIS_HOST", "redis_port" => "REDIS_PORT",
+            "api_jwt_secret" => "API_JWT_SECRET",
         ];
         $c = ["protocol" => "https"];
         foreach ($map as $key => $env) {
